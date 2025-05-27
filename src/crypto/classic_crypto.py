@@ -35,7 +35,7 @@ class ClassicCrypto:
         """Derive a session key from the shared secret using HKDF"""
         # Use a fixed salt for testing
         if salt is None:
-            salt = b'fixed_salt_for_testing_32bytes!!'
+            salt = b''
         
         # Convert shared secret point to bytes by concatenating x and y coordinates
         shared_secret_bytes = f"{shared_secret.x}:{shared_secret.y}".encode()

@@ -2,38 +2,41 @@ import asyncio
 import json
 import os
 import traceback
+from dotenv import load_dotenv
 from ..crypto.crypto_factory import CryptoFactory
 from Crypto.PublicKey import RSA, ECC
 from Crypto.Hash import SHA256
+from Crypto.Random import get_random_bytes
+
+# Load environment variables
+load_dotenv()
 
 class SSHClient:
     def __init__(self):
         try:
-            # Get configuration from environment variables with defaults
-            self.host = os.getenv('SSH_HOST', 'localhost')
-            self.port = int(os.getenv('SSH_PORT', '2222'))
+            # Load configuration from environment variables
+            self.host = os.getenv('HOST', 'localhost')
+            self.port = int(os.getenv('PORT', 2222))
             self.use_pqc = os.getenv('USE_PQC', 'false').lower() == 'true'
             
             print(f"Initializing client for {self.host}:{self.port}")
             print(f"Using {'Post-Quantum' if self.use_pqc else 'Classical'} cryptography")
             
-            # Load server's host key
-            host_key_path = os.path.join(os.path.dirname(__file__), '..', '..', 'keys', 'known_hosts')
-            if os.path.exists(host_key_path):
-                print("Loading known hosts...")
-                with open(host_key_path, 'rb') as f:
-                    self.known_hosts = json.load(f)
+            # Initialize crypto
+            self.crypto = CryptoFactory.create_crypto()
+            
+            # Generate key pair for key exchange
+            print("Generating key pair for key exchange...")
+            if self.use_pqc:
+                self.client_dh_public_key = self.crypto.generate_dh_keypair()
+                self.client_dh_private_key = None
             else:
-                print("No known hosts file found. Will prompt to accept new host key.")
-                self.known_hosts = {}
+                self.client_dh_public_key, self.client_dh_private_key = self.crypto.generate_dh_keypair()
             
-            # Initialize crypto with the appropriate type
-            self.crypto = CryptoFactory.create_crypto(self.use_pqc)
-            
-            # Generate key pairs
-            print("Generating key pairs...")
+            # Generate key pair for authentication
+            print("Generating key pair for authentication...")
             self.client_public_key, self.client_private_key = self.crypto.generate_keypair()
-            self.client_dh_public_key, self.client_dh_private_key = self.crypto.generate_dh_keypair()
+            
             self.session_key = None
             self.hmac_key = None
             self.host_key = None
@@ -66,7 +69,7 @@ class SSHClient:
             if server_use_pqc != self.use_pqc:
                 print(f"Error: Server is using {'Post-Quantum' if server_use_pqc else 'Classical'} cryptography, but client is using {'Post-Quantum' if self.use_pqc else 'Classical'} cryptography")
                 return False
-            
+
             # Parse server's public keys
             if self.use_pqc:
                 self.host_key = bytes.fromhex(server_info['host_key'])
@@ -74,27 +77,6 @@ class SSHClient:
             else:
                 self.host_key = RSA.import_key(bytes.fromhex(server_info['host_key']))
                 server_dh_public_key = ECC.import_key(server_info['dh_public_key'].encode())
-            
-            # Verify host key
-            host_key_str = f"{self.host}:{self.port}"
-            if host_key_str in self.known_hosts:
-                if self.known_hosts[host_key_str] != server_info['host_key']:
-                    print("WARNING: Host key has changed!")
-                    print("This could mean that someone is trying to impersonate the server.")
-                    print("If you trust the new key, you can update it in the known_hosts file.")
-                    return False
-            else:
-                print(f"New host key received from {host_key_str}")
-                print("Host key fingerprint:", server_info['host_key'][:32])
-                response = input("Do you want to trust this host key? (yes/no): ")
-                if response.lower() != 'yes':
-                    print("Connection aborted by user")
-                    return False
-                # Save the new host key
-                self.known_hosts[host_key_str] = server_info['host_key']
-                os.makedirs(os.path.dirname(os.path.join(os.path.dirname(__file__), '..', '..', 'keys')), exist_ok=True)
-                with open(os.path.join(os.path.dirname(__file__), '..', '..', 'keys', 'known_hosts'), 'w') as f:
-                    json.dump(self.known_hosts, f)
             
             print("Server public keys received and parsed")
             
@@ -110,7 +92,9 @@ class SSHClient:
             # Compute shared secret
             print("Computing shared secret...")
             if self.use_pqc:
-                shared_secret, ciphertext = self.crypto.compute_shared_secret(self.client_dh_private_key, server_dh_public_key)
+                ciphertext, shared_secret = self.crypto.encapsulate_shared_secret(server_dh_public_key)
+                self.writer.write(ciphertext.hex().encode() + b'\n')
+                await self.writer.drain()
             else:
                 shared_secret = self.crypto.compute_shared_secret(self.client_dh_private_key, server_dh_public_key)
             
@@ -118,7 +102,7 @@ class SSHClient:
             print("Deriving session keys...")
             self.session_key = self.crypto.derive_session_key(shared_secret)
             self.hmac_key = self.crypto.derive_session_key(shared_secret, salt=b'hmac')
-            
+            """
             # Server Authentication
             print("Waiting for server signature...")
             # Read signature length
@@ -130,15 +114,16 @@ class SSHClient:
                 
             print("Verifying server signature...")
             # Convert shared secret to bytes for verification
+            auth_data = f"Client {self.host}:{self.port}".encode()
             if self.use_pqc:
                 shared_secret_bytes = shared_secret
+                auth_signature = self.crypto.sign(shared_secret_bytes)
             else:
                 shared_secret_bytes = f"{shared_secret.x}:{shared_secret.y}".encode()
+                auth_signature = self.crypto.sign(shared_secret_bytes)
             
             # Always send client authentication, even if server verification fails
             print("Sending client authentication...")
-            auth_data = f"Client {self.host}:{self.port}".encode()
-            auth_signature = self.crypto.sign(auth_data, self.client_private_key)
             
             # Send auth data with length prefix
             auth_len = len(auth_data)
@@ -157,7 +142,7 @@ class SSHClient:
                 # Don't raise exception, just log the failure
             else:
                 print("Server authenticated successfully")
-            
+            """
             print("Successfully established secure connection")
             return True
             

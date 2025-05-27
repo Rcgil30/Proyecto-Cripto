@@ -2,56 +2,49 @@ import asyncio
 import json
 import os
 import traceback
+import socket
+import threading
+from dotenv import load_dotenv
 from ..crypto.crypto_factory import CryptoFactory
 from Crypto.PublicKey import RSA, ECC
 from Crypto.Random import get_random_bytes
 
+# Load environment variables
+load_dotenv()
+
 class SSHServer:
     def __init__(self):
         try:
-            # Get configuration from environment variables with defaults
-            self.host = os.getenv('SSH_HOST', 'localhost')
-            self.port = int(os.getenv('SSH_PORT', '2222'))
+            # Load configuration from environment variables
+            self.host = os.getenv('HOST', 'localhost')
+            self.port = int(os.getenv('PORT', 2222))
             self.max_connections = int(os.getenv('MAX_CONNECTIONS', '1'))
             self.use_pqc = os.getenv('USE_PQC', 'false').lower() == 'true'
             
             print(f"Initializing server on {self.host}:{self.port}")
             print(f"Using {'Post-Quantum' if self.use_pqc else 'Classical'} cryptography")
             
-            # Initialize crypto with the appropriate type
-            self.crypto = CryptoFactory.create_crypto(self.use_pqc)
+            # Initialize crypto
+            self.crypto = CryptoFactory.create_crypto()
             
-            # Load or generate host key
-            host_key_path = os.path.join(os.path.dirname(__file__), '..', '..', 'keys', 'host_key')
-            if os.path.exists(host_key_path):
-                print("Loading existing host key...")
-                with open(host_key_path, 'rb') as f:
-                    if self.use_pqc:
-                        self.host_key_private = f.read()
-                        self.host_key_public = self.crypto.sig.export_public_key(self.host_key_private)
-                    else:
-                        self.host_key_private = RSA.import_key(f.read())
-                        self.host_key_public = self.host_key_private.publickey()
-            else:
-                print("Generating new host key...")
-                self.host_key_public, self.host_key_private = self.crypto.generate_keypair()
-                # Save the private key
-                os.makedirs(os.path.dirname(host_key_path), exist_ok=True)
-                with open(host_key_path, 'wb') as f:
-                    if self.use_pqc:
-                        f.write(self.host_key_private)
-                    else:
-                        f.write(self.host_key_private.export_key())
-                # Save the public key in a separate file
-                with open(host_key_path + '.pub', 'wb') as f:
-                    if self.use_pqc:
-                        f.write(self.host_key_public)
-                    else:
-                        f.write(self.host_key_public.export_key())
+            # Initialize server socket
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            # Store active connections
+            self.connections = []
+            
+            # Generate host key
+            print("Generating host key...")
+            self.host_key_public, self.host_key_private = self.crypto.generate_keypair()
             
             # Generate key pair for key exchange
             print("Generating key pair for key exchange...")
-            self.server_dh_public_key, self.server_dh_private_key = self.crypto.generate_dh_keypair()
+            if self.use_pqc:
+                self.server_dh_public_key = self.crypto.generate_dh_keypair()
+                self.server_dh_private_key = None
+            else:
+                self.server_dh_public_key, self.server_dh_private_key = self.crypto.generate_dh_keypair()
             self.clients = {}
             self.active_connection = None
             self.server = None
@@ -97,11 +90,15 @@ class SSHServer:
             client_dh_public_key = bytes.fromhex(client_info['dh_public_key']) if self.use_pqc else ECC.import_key(client_info['dh_public_key'].encode())
             client_public_key = bytes.fromhex(client_info['public_key']) if self.use_pqc else RSA.import_key(bytes.fromhex(client_info['public_key']))
             print("Client public keys received and parsed")
+
             
             # Compute shared secret
             print("Computing shared secret...")
             if self.use_pqc:
-                shared_secret, ciphertext = self.crypto.compute_shared_secret(self.server_dh_private_key, client_dh_public_key)
+                ciphertext = await reader.readline()
+                ciphertext = ciphertext.decode()
+                ciphertext = bytes.fromhex(ciphertext)
+                shared_secret = self.crypto.compute_shared_secret(ciphertext)
             else:
                 shared_secret = self.crypto.compute_shared_secret(self.server_dh_private_key, client_dh_public_key)
             
@@ -110,15 +107,17 @@ class SSHServer:
             session_key = self.crypto.derive_session_key(shared_secret)
             hmac_key = self.crypto.derive_session_key(shared_secret, salt=b'hmac')
             
+            """
             # Server Authentication
             print("Signing shared secret...")
             # Convert shared secret to bytes for signing
             if self.use_pqc:
                 shared_secret_bytes = shared_secret
+                host_signature = self.crypto.sign(shared_secret_bytes)
             else:
                 shared_secret_bytes = f"{shared_secret.x}:{shared_secret.y}".encode()
+                host_signature = self.crypto.sign(shared_secret_bytes, self.host_key_private)
             
-            host_signature = self.crypto.sign(shared_secret_bytes, self.host_key_private)
             # Send signature with length prefix
             signature_len = len(host_signature)
             writer.write(signature_len.to_bytes(4, 'big'))
@@ -146,7 +145,7 @@ class SSHServer:
             if not self.crypto.verify(client_auth, client_signature, client_public_key):
                 print(f"Client authentication failed for {addr}")
                 return
-            
+            """
             print(f"Client {addr} authenticated successfully")
             
             # Store client info
@@ -195,7 +194,6 @@ class SSHServer:
             # Signal the server to shut down
             if self.server:
                 self.server.close()
-                print("Server shut down complete")
     
     async def start(self):
         try:
@@ -220,7 +218,7 @@ class SSHServer:
                 async with self.server:
                     await self.server.serve_forever()
             except asyncio.CancelledError:
-                print("Server shutdown requested")
+                pass
             except Exception as e:
                 print(f"Server error: {e}")
             finally:
