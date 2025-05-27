@@ -102,7 +102,7 @@ class SSHClient:
             print("Deriving session keys...")
             self.session_key = self.crypto.derive_session_key(shared_secret)
             self.hmac_key = self.crypto.derive_session_key(shared_secret, salt=b'hmac')
-            """
+            
             # Server Authentication
             print("Waiting for server signature...")
             # Read signature length
@@ -117,11 +117,10 @@ class SSHClient:
             auth_data = f"Client {self.host}:{self.port}".encode()
             if self.use_pqc:
                 shared_secret_bytes = shared_secret
-                auth_signature = self.crypto.sign(shared_secret_bytes)
             else:
                 shared_secret_bytes = f"{shared_secret.x}:{shared_secret.y}".encode()
-                auth_signature = self.crypto.sign(shared_secret_bytes)
             
+            auth_signature = self.crypto.sign(shared_secret_bytes)
             # Always send client authentication, even if server verification fails
             print("Sending client authentication...")
             
@@ -142,7 +141,7 @@ class SSHClient:
                 # Don't raise exception, just log the failure
             else:
                 print("Server authenticated successfully")
-            """
+            
             print("Successfully established secure connection")
             return True
             

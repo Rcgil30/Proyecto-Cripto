@@ -71,9 +71,7 @@ class PQCrypto:
         """Verify a signature using Dilithium2"""
         try:
             sig = oqs.Signature(self.sig_alg)
-            sig.generate_keypair()
-            sig.import_public_key(public_key)
-            return sig.verify(message, signature)
+            return sig.verify(message, signature, public_key)
         except Exception as e:
             print(f"Verification error: {e}")
             return False

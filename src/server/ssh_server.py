@@ -107,7 +107,7 @@ class SSHServer:
             session_key = self.crypto.derive_session_key(shared_secret)
             hmac_key = self.crypto.derive_session_key(shared_secret, salt=b'hmac')
             
-            """
+            
             # Server Authentication
             print("Signing shared secret...")
             # Convert shared secret to bytes for signing
@@ -142,10 +142,15 @@ class SSHServer:
             
             # Verify client signature
             print("Verifying client signature...")
-            if not self.crypto.verify(client_auth, client_signature, client_public_key):
-                print(f"Client authentication failed for {addr}")
-                return
-            """
+            if self.use_pqc:
+                if not self.crypto.verify(shared_secret_bytes, client_signature, client_public_key):
+                    print(f"Client authentication failed for {addr}")
+                    return
+            else:
+                if not self.crypto.verify(client_auth, client_signature, client_public_key):
+                    print(f"Client authentication failed for {addr}")
+                    return
+            
             print(f"Client {addr} authenticated successfully")
             
             # Store client info
