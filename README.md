@@ -1,92 +1,97 @@
-# Proyecto-Cripto
+# SSH Client-Server Implementation
 
-## Post-Quantum Integration Points
+A secure SSH client-server implementation supporting both classical and post-quantum cryptography.
 
-### 1. **Key Exchange Algorithms** (Lines 50-70)
+## Features
 
-- Replace Diffie-Hellman/ECDH with post-quantum KEMs:
-  - **CRYSTALS-Kyber** (NIST selected standard)
-  - **NTRU**
-  - **Classic McEliece**
-- Implementation via `PostQuantumKeyExchange` abstract class
+- Support for both classical and post-quantum cryptography
+- Classical cryptography:
+  - Key Exchange: ECDH-P256
+  - Signature: RSA-SHA256
+  - Encryption: AES-192-CBC
+  - MAC: HMAC-SHA256
+- Post-quantum cryptography:
+  - Key Exchange: Kyber512
+  - Signature: Dilithium2
+  - Encryption: AES-192-CBC
+  - MAC: HMAC-SHA256
 
-### 2. **Digital Signatures** (Lines 72-92)
+## Prerequisites
 
-- Replace RSA/ECDSA with post-quantum signatures:
-  - **CRYSTALS-Dilithium** (NIST selected)
-  - **FALCON** (NIST selected)
-  - **SPHINCS+** (NIST selected)
-- Implementation via `PostQuantumSignature` abstract class
+- Python 3.9 or higher
+- pip (Python package manager)
+- Build tools (for installing liboqs-python):
+  - On Ubuntu/Debian: `sudo apt-get install build-essential python3-dev`
+  - On Windows: Visual Studio Build Tools
+  - On macOS: Xcode Command Line Tools
 
-### 3. **Symmetric Cryptography** (Lines 94-120)
+## Installation
 
-- Strengthen against quantum attacks:
-  - Use AES-256 instead of AES-128
-  - Consider SHA-3 family hash functions
-  - Increase MAC key sizes
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd <repository-name>
+```
 
-### 4. **Hybrid Approaches** (Lines 110-112)
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-- Combine classical + post-quantum for transition period
-- Examples: `ecdh-nistp256-kyber768`, `rsa-dilithium3`
+Note: If you encounter issues installing `liboqs-python`, you may need to install additional build dependencies first. See the Prerequisites section above.
 
-## Key Metrics for Comparison
+## Configuration
 
-### **Performance Metrics**
+Create a `.env` file in the root directory with the following variables:
 
-- **Key Generation Time**: Time to generate keypairs (ms)
-- **Signature/Verification Time**: Cryptographic operation latency
-- **Encapsulation/Decapsulation Time**: KEM operation speed
-- **Connection Establishment Time**: End-to-end handshake duration
-- **Throughput**: Data transfer rate (MB/s)
+```env
+# Server Configuration
+HOST=localhost
+PORT=2222
+MAX_CONNECTIONS=1
+USE_PQC=false  # Set to true to use post-quantum cryptography
 
-### **Security Metrics**
+# Client Configuration
+HOST=localhost
+PORT=2222
+USE_PQC=false  # Set to true to use post-quantum cryptography
+```
 
-- **Classical Security Level**: Bits of classical security
-- **Quantum Security Level**: Bits of quantum resistance
-- **Key Sizes**: Public/private key sizes in bytes
-- **Signature Sizes**: Signature overhead in bytes
-- **Ciphertext Sizes**: KEM ciphertext sizes
+## Usage
 
-### **Network Metrics**
+### Starting the Server
 
-- **Handshake Overhead**: Additional bytes for PQ algorithms
-- **Bandwidth Efficiency**: Useful data vs protocol overhead
-- **Round Trip Count**: Number of network exchanges required
-- **Protocol Compatibility**: Interoperability with existing SSH
+1. Open a terminal and navigate to the project directory
+2. Run the server:
+```bash
+python -m src.server.ssh_server
+```
 
-### **Resource Metrics**
+The server will start and listen for connections on the configured host and port.
 
-- **Memory Usage**: Peak and average RAM consumption
-- **CPU Utilization**: Processing overhead percentage
-- **Battery Impact**: Energy consumption on mobile devices
-- **Cache Efficiency**: CPU cache hit rates
+### Using the Client
 
-## Implementation Recommendations
+1. Open another terminal and navigate to the project directory
+2. Run the client:
+```bash
+python -m src.client.ssh_client
+```
 
-### **For High Security**
+3. Once connected, you can:
+   - Type messages and press Enter to send them
+   - Type 'quit' to exit the client
 
-- Use **Dilithium3** + **Kyber768** combination
-- Implement certificate pinning for host keys
-- Enable perfect forward secrecy
+## Important Notes
 
-### **For Performance**
+1. The server only accepts one connection at a time
+2. Both client and server must use the same cryptography mode (classical or post-quantum)
+3. The signature verification is currently disabled and will be implemented in a future update
+4. Make sure the `.env` file is properly configured before running either the client or server
 
-- Use **Falcon-512** for faster signatures
-- Implement hybrid modes for gradual transition
-- Optimize network round trips
+## Security Considerations
 
-### **For Compatibility**
-
-- Implement algorithm negotiation with fallbacks
-- Support both classical and post-quantum simultaneously
-- Provide clear upgrade paths
-
-### **For Constrained Environments**
-
-- Use **Kyber512** for smaller key sizes
-- Implement streaming/incremental operations
-- Consider hardware acceleration where available
-
-The implementation includes metric collection points throughout the code (marked as `METRICS COLLECTION POINT`) that would allow you to benchmark different post-quantum algorithms and compare their real-world performance in SSH deployments.
+- This is a demonstration implementation and should not be used in production without proper security review
+- The post-quantum cryptography implementation uses experimental algorithms
+- Always use strong, unique keys in production environments
+- Keep your dependencies up to date
 
