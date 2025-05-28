@@ -120,7 +120,11 @@ class SSHClient:
             else:
                 shared_secret_bytes = f"{shared_secret.x}:{shared_secret.y}".encode()
             
-            auth_signature = self.crypto.sign(shared_secret_bytes)
+            if self.use_pqc:
+                auth_signature = self.crypto.sign(shared_secret_bytes)
+            else:
+                auth_signature = self.crypto.sign(shared_secret_bytes, self.client_private_key)
+
             # Always send client authentication, even if server verification fails
             print("Sending client authentication...")
             

@@ -142,14 +142,10 @@ class SSHServer:
             
             # Verify client signature
             print("Verifying client signature...")
-            if self.use_pqc:
-                if not self.crypto.verify(shared_secret_bytes, client_signature, client_public_key):
-                    print(f"Client authentication failed for {addr}")
-                    return
-            else:
-                if not self.crypto.verify(client_auth, client_signature, client_public_key):
-                    print(f"Client authentication failed for {addr}")
-                    return
+            if not self.crypto.verify(shared_secret_bytes, client_signature, client_public_key):
+                print(f"Client authentication failed for {addr}")
+                return
+           
             
             print(f"Client {addr} authenticated successfully")
             
